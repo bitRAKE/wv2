@@ -1,420 +1,665 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>HyperGrid Defender</title>
     <style>
-        body {
+        :root {
+            --neon-blue: #00f3ff;
+            --neon-pink: #ff00ff;
+            --neon-green: #00ff41;
+            --bg-color: #050505;
+            --ui-font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+        
+        body, html {
             margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
             overflow: hidden;
-            background-color: #050505;
-            color: #fff;
-            font-family: 'Segoe UI', sans-serif;
-            user-select: none;
+            font-family: var(--ui-font);
+            color: white;
         }
 
-        canvas {
+        #gameCanvas {
             display: block;
+            width: 100%;
+            height: 100%;
         }
 
-        #ui {
+        /* UI Overlay Layer */
+        #ui-layer {
             position: absolute;
-            top: 20px;
-            left: 20px;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             pointer-events: none;
-            text-shadow: 0 0 10px #0ff;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
         }
 
-        #score {
+        /* HUD */
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
             font-size: 24px;
             font-weight: bold;
-            color: #0ff;
+            text-shadow: 0 0 10px var(--neon-blue);
+            opacity: 0;
+            transition: opacity 0.5s;
         }
+        .hud-top.visible { opacity: 1; }
 
-        #exit-btn {
+        /* Menus */
+        .menu-screen {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            padding: 10px 20px;
-            background: rgba(255, 0, 0, 0.2);
-            border: 1px solid #f00;
-            color: #f00;
-            font-weight: bold;
-            cursor: pointer;
-            text-transform: uppercase;
-            box-shadow: 0 0 10px #f00;
-            transition: all 0.2s;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 5, 0.85);
+            backdrop-filter: blur(5px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             pointer-events: auto;
-            z-index: 100;
+            transition: opacity 0.3s, visibility 0.3s;
+            z-index: 10;
         }
 
-        #exit-btn:hover {
-            background: rgba(255, 0, 0, 0.5);
-            box-shadow: 0 0 20px #f00;
-        }
-
-        #game-over {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            display: none;
+        .hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
         }
 
         h1 {
             font-size: 64px;
-            color: #f0f;
-            text-shadow: 0 0 20px #f0f;
             margin: 0 0 20px 0;
+            background: linear-gradient(90deg, var(--neon-blue), var(--neon-pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px rgba(0, 243, 255, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            text-align: center;
         }
 
-        p {
-            font-size: 24px;
-            color: #fff;
-        }
+        p { font-size: 18px; color: #ccc; margin-bottom: 40px; text-align: center; max-width: 600px; line-height: 1.5; }
 
-        #restart-btn {
-            margin-top: 20px;
+        .btn {
+            background: transparent;
+            color: var(--neon-blue);
+            border: 2px solid var(--neon-blue);
             padding: 15px 40px;
-            background: #0f0;
-            border: none;
-            color: #000;
-            font-size: 20px;
+            font-size: 24px;
             font-weight: bold;
             cursor: pointer;
-            box-shadow: 0 0 15px #0f0;
-            pointer-events: auto;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.2s;
+            box-shadow: 0 0 10px var(--neon-blue);
+            margin: 10px;
+            font-family: var(--ui-font);
         }
 
-        #restart-btn:hover {
-            background: #fff;
-            box-shadow: 0 0 30px #0f0;
+        .btn:hover {
+            background: var(--neon-blue);
+            color: var(--bg-color);
+            box-shadow: 0 0 30px var(--neon-blue);
+            transform: scale(1.05);
         }
+
+        .btn-secondary {
+            color: var(--neon-pink);
+            border-color: var(--neon-pink);
+            box-shadow: 0 0 10px var(--neon-pink);
+            font-size: 18px;
+            padding: 10px 30px;
+        }
+        .btn-secondary:hover {
+            background: var(--neon-pink);
+            color: white;
+            box-shadow: 0 0 30px var(--neon-pink);
+        }
+
+        #pause-btn {
+            pointer-events: auto;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid var(--neon-blue);
+            color: var(--neon-blue);
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-weight: bold;
+            display: none;
+        }
+        #pause-btn:hover { background: var(--neon-blue); color: black; }
+
     </style>
 </head>
-
 <body>
-    <div id="ui">
-        <div id="score">SCORE: 0</div>
-    </div>
-    <button id="exit-btn">Exit System</button>
-    <div id="game-over">
-        <h1>SYSTEM FAILURE</h1>
-        <p>Final Score: <span id="final-score">0</span></p>
-        <button id="restart-btn">Reboot Sequence</button>
-    </div>
+
     <canvas id="gameCanvas"></canvas>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const scoreEl = document.getElementById('score');
-        const gameOverEl = document.getElementById('game-over');
-        const finalScoreEl = document.getElementById('final-score');
-        const restartBtn = document.getElementById('restart-btn');
-        const exitBtn = document.getElementById('exit-btn');
+    <div id="ui-layer">
+        <div class="hud-top" id="hud">
+            <div id="score-display">SCORE: 0</div>
+            <div id="lives-display">LIVES: 3</div>
+        </div>
+        <div style="align-self: flex-end;">
+            <div id="pause-btn">||</div>
+        </div>
+    </div>
 
-        let width, height;
-        let animationId;
-        let lastTime = 0;
-        let score = 0;
-        let gameActive = true;
-        let isPaused = false;
+    <div id="start-screen" class="menu-screen">
+        <h1>HyperGrid Defender</h1>
+        <p>Mouse to move. Click to launch.<br>ESC to Pause. Destroy the grid.</p>
+        <button class="btn" id="start-btn">Initialize System</button>
+        <button class="btn btn-secondary" id="exit-btn">Exit to Desktop</button>
+    </div>
 
-        // Entities
-        const player = { x: 0, y: 0, angle: 0, size: 20, color: '#0ff' };
-        let projectiles = [];
-        let enemies = [];
-        let particles = [];
+    <div id="pause-screen" class="menu-screen hidden">
+        <h1>System Paused</h1>
+        <button class="btn" id="resume-btn">Resume</button>
+        <button class="btn btn-secondary" id="quit-btn">Quit to Menu</button>
+    </div>
 
-        // Input
-        const mouse = { x: 0, y: 0 };
+    <div id="gameover-screen" class="menu-screen hidden">
+        <h1 id="go-title">Critical Failure</h1>
+        <p id="go-score">Final Score: 0</p>
+        <button class="btn" id="restart-btn">Reboot System</button>
+        <button class="btn btn-secondary" id="go-exit-btn">Exit to Desktop</button>
+    </div>
 
-        // Resize
-        function resize() {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
-            if (!gameActive && enemies.length === 0) { // Initial Reset
-                player.x = width / 2;
-                player.y = height / 2;
+<script>
+/**
+ * HYPERGRID DEFENDER
+ * Updated: Sharper bricks, expanded color palette
+ */
+
+// --- Configuration ---
+const CONFIG = {
+    paddleWidth: 120,
+    paddleHeight: 16,
+    ballRadius: 7,
+    brickRows: 11,
+    brickCols: 12,
+    brickGap: 8,
+    brickHeight: 24, // ✅ More rectangular
+    // ✅ Expanded 10-color neon palette
+    colors: [
+        '#00f3ff', // Cyan
+        '#ff00ff', // Magenta
+        '#00ff41', // Green
+        '#ffff00', // Yellow
+        '#ff0055', // Red
+        '#ff8800', // Orange
+        '#aa00ff', // Purple
+        '#0088ff', // Blue
+        '#ff0088', // Pink
+        '#00ff88'  // Mint
+    ]
+};
+
+// --- State ---
+const state = {
+    screen: 'start',
+    score: 0,
+    lives: 3,
+    level: 1,
+    width: 0,
+    height: 0,
+    dpi: 1
+};
+
+// --- Audio System ---
+const audio = {
+    ctx: null,
+    init: function() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
+    },
+    playTone: function(freq, type, duration, vol = 0.1) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
+    },
+    sfx: {
+        paddle: () => audio.playTone(400, 'sine', 0.1),
+        brick: () => audio.playTone(600 + Math.random()*200, 'square', 0.1, 0.05),
+        wall: () => audio.playTone(200, 'triangle', 0.1),
+        lose: () => {
+            audio.playTone(150, 'sawtooth', 0.5);
+            setTimeout(() => audio.playTone(100, 'sawtooth', 0.5), 200);
+        },
+        win: () => {
+            [400, 500, 600, 800].forEach((f, i) => setTimeout(() => audio.playTone(f, 'sine', 0.3), i * 100));
+        }
+    }
+};
+
+// --- Entities ---
+const paddle = { x: 0, y: 0, width: CONFIG.paddleWidth, height: CONFIG.paddleHeight };
+const ball = { x: 0, y: 0, dx: 0, dy: 0, speed: 0, active: false };
+let bricks = [];
+let particles = [];
+let shake = 0;
+
+// --- Canvas Setup ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+function resize() {
+    state.dpi = window.devicePixelRatio || 1;
+    state.width = window.innerWidth;
+    state.height = window.innerHeight;
+    
+    canvas.style.width = state.width + 'px';
+    canvas.style.height = state.height + 'px';
+    canvas.width = state.width * state.dpi;
+    canvas.height = state.height * state.dpi;
+    
+    ctx.scale(state.dpi, state.dpi);
+    
+    paddle.y = state.height - 50;
+    if (!ball.active) {
+        ball.x = paddle.x + paddle.width / 2;
+        ball.y = paddle.y - CONFIG.ballRadius;
+    }
+}
+window.addEventListener('resize', resize);
+
+// --- Input Handling ---
+function updatePaddleX(clientX) {
+    paddle.x = clientX - paddle.width / 2;
+    if (paddle.x < 0) paddle.x = 0;
+    if (paddle.x + paddle.width > state.width) paddle.x = state.width - paddle.width;
+    
+    if (!ball.active) {
+        ball.x = paddle.x + paddle.width / 2;
+    }
+}
+
+window.addEventListener('mousemove', e => {
+    if (state.screen === 'playing') updatePaddleX(e.clientX);
+});
+window.addEventListener('touchmove', e => {
+    if (state.screen === 'playing') {
+        e.preventDefault();
+        updatePaddleX(e.touches[0].clientX);
+    }
+}, { passive: false });
+
+window.addEventListener('mousedown', () => {
+    if (state.screen === 'playing' && !ball.active) launchBall();
+});
+window.addEventListener('touchstart', () => {
+    if (state.screen === 'playing' && !ball.active) launchBall();
+}, { passive: false });
+
+window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        if (state.screen === 'playing') togglePause();
+        else if (state.screen === 'paused') togglePause();
+    }
+});
+
+// --- Game Logic ---
+
+function initBricks() {
+    bricks = [];
+    const padding = 40;
+    const availableWidth = state.width - (padding * 2);
+    const brickWidth = (availableWidth - (CONFIG.brickGap * (CONFIG.brickCols - 1))) / CONFIG.brickCols;
+
+    for (let r = 0; r < CONFIG.brickRows; r++) {
+        for (let c = 0; c < CONFIG.brickCols; c++) {
+            bricks.push({
+                x: padding + c * (brickWidth + CONFIG.brickGap),
+                y: padding + r * (CONFIG.brickHeight + CONFIG.brickGap),
+                w: brickWidth,
+                h: CONFIG.brickHeight,
+                status: 1,
+                color: CONFIG.colors[r % CONFIG.colors.length]
+            });
+        }
+    }
+}
+
+function launchBall() {
+    ball.active = true;
+    ball.speed = 8 + (state.level * 0.5);
+    ball.dx = ball.speed * (Math.random() > 0.5 ? 1 : -1);
+    ball.dy = -ball.speed;
+    audio.sfx.paddle();
+}
+
+function createParticles(x, y, color) {
+    for (let i = 0; i < 15; i++) {
+        particles.push({
+            x: x,
+            y: y,
+            dx: (Math.random() - 0.5) * 10,
+            dy: (Math.random() - 0.5) * 10,
+            life: 1.0,
+            color: color
+        });
+    }
+}
+
+function update() {
+    if (state.screen !== 'playing') return;
+
+    if (ball.active) {
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        if (ball.x + CONFIG.ballRadius > state.width || ball.x - CONFIG.ballRadius < 0) {
+            ball.dx = -ball.dx;
+            audio.sfx.wall();
+            shake = 5;
+        }
+        if (ball.y - CONFIG.ballRadius < 0) {
+            ball.dy = -ball.dy;
+            audio.sfx.wall();
+            shake = 5;
+        }
+        
+        if (ball.y + CONFIG.ballRadius > paddle.y && 
+            ball.y - CONFIG.ballRadius < paddle.y + paddle.height &&
+            ball.x > paddle.x && ball.x < paddle.x + paddle.width) {
+            
+            let hitPoint = ball.x - (paddle.x + paddle.width / 2);
+            hitPoint = hitPoint / (paddle.width / 2);
+            
+            let angle = hitPoint * (Math.PI / 3);
+            let speed = Math.sqrt(ball.dx*ball.dx + ball.dy*ball.dy);
+            speed = Math.min(speed * 1.05, 15); 
+
+            ball.dx = speed * Math.sin(angle);
+            ball.dy = -speed * Math.cos(angle);
+            ball.y = paddle.y - CONFIG.ballRadius;
+            audio.sfx.paddle();
+            createParticles(ball.x, ball.y, '#fff');
+        }
+
+        let activeBricks = 0;
+        for (let b of bricks) {
+            if (b.status === 1) {
+                activeBricks++;
+                if (ball.x > b.x && ball.x < b.x + b.w && ball.y > b.y && ball.y < b.y + b.h) {
+                    ball.dy = -ball.dy;
+                    b.status = 0;
+                    state.score += 10;
+                    audio.sfx.brick();
+                    createParticles(b.x + b.w/2, b.y + b.h/2, b.color);
+                    shake = 3;
+                    updateHUD();
+                }
             }
         }
-        window.addEventListener('resize', resize);
-        resize();
-        player.x = width / 2;
-        player.y = height / 2;
 
-        // Input Handling
-        window.addEventListener('mousemove', e => {
-            mouse.x = e.clientX;
-            mouse.y = e.clientY;
-        });
+        if (activeBricks === 0) {
+            state.level++;
+            audio.sfx.win();
+            resetLevel();
+        }
 
-        window.addEventListener('mousedown', () => {
-            if (gameActive && !isPaused) shoot();
-        });
-
-        window.addEventListener('keydown', e => {
-            if (e.key === 'p' || e.key === 'P') {
-                if (gameActive) isPaused = !isPaused;
-            }
-        });
-
-        restartBtn.addEventListener('click', restartGame);
-
-        exitBtn.addEventListener('click', () => {
-            if (window.chrome && window.chrome.webview) {
-                window.chrome.webview.postMessage('close');
+        if (ball.y - CONFIG.ballRadius > state.height) {
+            state.lives--;
+            audio.sfx.lose();
+            shake = 20;
+            updateHUD();
+            if (state.lives <= 0) {
+                gameOver();
             } else {
-                window.close(); // Fallback for pure browser
-            }
-        });
-
-        class Projectile {
-            constructor(x, y, angle) {
-                this.x = x;
-                this.y = y;
-                this.vx = Math.cos(angle) * 15;
-                this.vy = Math.sin(angle) * 15;
-                this.life = 100;
-                this.color = '#ff0';
-            }
-            update() {
-                this.x += this.vx;
-                this.y += this.vy;
-                this.life--;
-            }
-            draw() {
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
-                ctx.fillStyle = this.color;
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = this.color;
-                ctx.fill();
-                ctx.shadowBlur = 0;
+                ball.active = false;
+                ball.x = paddle.x + paddle.width / 2;
+                ball.y = paddle.y - CONFIG.ballRadius;
             }
         }
+    } else {
+        ball.x = paddle.x + paddle.width / 2;
+        ball.y = paddle.y - CONFIG.ballRadius;
+    }
 
-        class Enemy {
-            constructor() {
-                // Spawn randomly on edges
-                if (Math.random() < 0.5) {
-                    this.x = Math.random() < 0.5 ? -20 : width + 20;
-                    this.y = Math.random() * height;
-                } else {
-                    this.x = Math.random() * width;
-                    this.y = Math.random() < 0.5 ? -20 : height + 20;
-                }
-                this.angle = 0;
-                this.speed = 2 + Math.random() * 2;
-                this.size = 15 + Math.random() * 10;
-                this.color = '#f0f';
-                this.spin = (Math.random() - 0.5) * 0.2;
-            }
-            update() {
-                const dx = player.x - this.x;
-                const dy = player.y - this.y;
-                const dist = Math.hypot(dx, dy);
-                this.angle += this.spin;
-                this.x += (dx / dist) * this.speed;
-                this.y += (dy / dist) * this.speed;
-            }
-            draw() {
-                ctx.save();
-                ctx.translate(this.x, this.y);
-                ctx.rotate(this.angle);
-                ctx.strokeStyle = this.color;
-                ctx.lineWidth = 2;
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = this.color;
-                ctx.strokeRect(-this.size / 2, -this.size / 2, this.size, this.size);
-                ctx.restore();
-                ctx.shadowBlur = 0;
-            }
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.dx;
+        p.y += p.dy;
+        p.life -= 0.02;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    if (shake > 0) shake *= 0.9;
+    if (shake < 0.5) shake = 0;
+}
+
+function resetLevel() {
+    ball.active = false;
+    initBricks();
+    ball.x = paddle.x + paddle.width / 2;
+    ball.y = paddle.y - CONFIG.ballRadius;
+}
+
+function startGame() {
+    audio.init();
+    state.score = 0;
+    state.lives = 3;
+    state.level = 1;
+    resize();
+    initBricks();
+    updateHUD();
+    state.screen = 'playing';
+    
+    toggleUI('hud', false);
+    toggleUI('start-screen', true);
+    toggleUI('pause-screen', true);
+    toggleUI('gameover-screen', true);
+    
+    document.getElementById('pause-btn').style.display = 'flex';
+    ball.active = false;
+    lockCursor();
+    loop();
+}
+
+function gameOver() {
+    state.screen = 'gameover';
+    document.getElementById('go-score').innerText = "Final Score: " + state.score;
+    
+    toggleUI('gameover-screen', false);
+    toggleUI('hud', true);
+    toggleUI('pause-screen', true);
+    toggleUI('start-screen', true);
+    
+    document.getElementById('pause-btn').style.display = 'none';
+    unlockCursor();
+}
+
+function togglePause() {
+    if (state.screen === 'playing') {
+        state.screen = 'paused';
+        unlockCursor();
+        toggleUI('pause-screen', false);
+    } else if (state.screen === 'paused') {
+        state.screen = 'playing';
+        lockCursor();
+        toggleUI('pause-screen', true);
+        loop();
+    }
+}
+
+function updateHUD() {
+    document.getElementById('score-display').innerText = `SCORE: ${state.score}`;
+    document.getElementById('lives-display').innerText = `LIVES: ${state.lives}`;
+}
+
+function toggleUI(id, hide) {
+    const el = document.getElementById(id);
+    if (hide) {
+        el.classList.add('hidden');
+        if(id === 'hud') el.classList.remove('visible');
+    } else {
+        el.classList.remove('hidden');
+        if(id === 'hud') el.classList.add('visible');
+    }
+}
+
+// --- Rendering ---
+function draw() {
+    ctx.fillStyle = 'rgba(5, 5, 5, 0.3)';
+    ctx.fillRect(0, 0, state.width, state.height);
+
+    ctx.save();
+    
+    if (shake > 0) {
+        const dx = (Math.random() - 0.5) * shake;
+        const dy = (Math.random() - 0.5) * shake;
+        ctx.translate(dx, dy);
+    }
+
+    // Neon Glow Mode
+    ctx.shadowBlur = 0;
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Draw Bricks - ✅ SHARPER EDGES
+    for (let b of bricks) {
+        if (b.status === 1) {
+            ctx.fillStyle = b.color;
+            ctx.shadowColor = b.color;
+            ctx.shadowBlur = 7; // ✅ Reduced from 15 for sharper edges
+            ctx.fillRect(b.x, b.y, b.w, b.h);
+            
+            // ✅ Subtle border for definition
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.lineWidth = 1;
+            ctx.shadowBlur = 0;
+            ctx.strokeRect(b.x, b.y, b.w, b.h);
         }
+    }
 
-        class Particle {
-            constructor(x, y, color) {
-                this.x = x;
-                this.y = y;
-                const angle = Math.random() * Math.PI * 2;
-                const speed = Math.random() * 5;
-                this.vx = Math.cos(angle) * speed;
-                this.vy = Math.sin(angle) * speed;
-                this.life = 1.0;
-                this.decay = 0.02 + Math.random() * 0.03;
-                this.color = color;
-            }
-            update() {
-                this.x += this.vx;
-                this.y += this.vy;
-                this.life -= this.decay;
-            }
-            draw() {
-                ctx.globalAlpha = this.life;
-                ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.globalAlpha = 1.0;
-            }
-        }
+    // Draw Paddle
+    ctx.fillStyle = CONFIG.colors[7];
+    ctx.shadowColor = CONFIG.colors[7];
+    ctx.shadowBlur = 11;
+    ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
 
-        function shoot() {
-            const angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-            projectiles.push(new Projectile(player.x, player.y, angle));
-            // Recoil
-            player.x -= Math.cos(angle) * 5;
-            player.y -= Math.sin(angle) * 5;
-        }
+    // Draw Ball
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, CONFIG.ballRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 15;
+    ctx.fill();
+    ctx.closePath();
 
-        function createExplosion(x, y, color) {
-            for (let i = 0; i < 15; i++) {
-                particles.push(new Particle(x, y, color));
-            }
-        }
+    // Draw Particles
+    for (let p of particles) {
+        ctx.fillStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.shadowBlur = 10;
+        ctx.fillRect(p.x, p.y, 4, 4);
+    }
+    ctx.globalAlpha = 1.0;
 
-        function restartGame() {
-            enemies = [];
-            projectiles = [];
-            particles = [];
-            score = 0;
-            scoreEl.innerText = "SCORE: 0";
-            gameActive = true;
-            isPaused = false;
-            player.x = width / 2;
-            player.y = height / 2;
-            gameOverEl.style.display = 'none';
-        }
+    // Background Grid
+    ctx.shadowBlur = 0;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = 'rgba(0, 243, 255, 0.1)';
+    ctx.lineWidth = 1;
+    const gridSize = 50;
+    const offset = (Date.now() / 50) % gridSize;
+    
+    ctx.beginPath();
+    for (let x = 0; x < state.width; x += gridSize) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, state.height);
+    }
+    for (let y = offset; y < state.height; y += gridSize) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(state.width, y);
+    }
+    ctx.stroke();
 
-        function gameOver() {
-            gameActive = false;
-            finalScoreEl.innerText = score;
-            gameOverEl.style.display = 'block';
-        }
+    ctx.restore();
+}
 
-        function update(dt) {
-            if (!gameActive || isPaused) return;
+function loop() {
+    if (state.screen === 'playing') {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+    }
+}
 
-            // Player Angle
-            player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+// --- Host Communication ---
+function closeHost() {
+    sendHostMessage('cursor_unlock');
+    sendHostMessage('close');
+}
 
-            // Spawn Enemies
-            if (Math.random() < 0.02 + (score * 0.0001)) {
-                enemies.push(new Enemy());
-            }
+function sendHostMessage(msg) {
+    if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage(msg);
+    } else {
+        console.log("Host Message:", msg);
+    }
+}
 
-            // Update Projectiles
-            for (let i = projectiles.length - 1; i >= 0; i--) {
-                const p = projectiles[i];
-                p.update();
-                if (p.life <= 0 || p.x < 0 || p.x > width || p.y < 0 || p.y > height) {
-                    projectiles.splice(i, 1);
-                }
-            }
+function lockCursor() {
+    sendHostMessage('cursor_lock');
+}
 
-            // Update Enemies
-            for (let i = enemies.length - 1; i >= 0; i--) {
-                const e = enemies[i];
-                e.update();
+function unlockCursor() {
+    sendHostMessage('cursor_unlock');
+}
 
-                // Collision with Player
-                const dist = Math.hypot(player.x - e.x, player.y - e.y);
-                if (dist < player.size + e.size / 2) {
-                    createExplosion(player.x, player.y, '#0ff');
-                    gameOver();
-                }
+// --- UI Event Listeners ---
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('resume-btn').addEventListener('click', togglePause);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+document.getElementById('pause-btn').addEventListener('click', togglePause);
+document.getElementById('quit-btn').addEventListener('click', () => {
+    toggleUI('pause-screen', true);
+    toggleUI('start-screen', false);
+    state.screen = 'start';
+    document.getElementById('pause-btn').style.display = 'none';
+    unlockCursor();
+});
 
-                // Collision with Projectiles
-                for (let j = projectiles.length - 1; j >= 0; j--) {
-                    const p = projectiles[j];
-                    const pDist = Math.hypot(p.x - e.x, p.y - e.y);
-                    if (pDist < e.size / 2 + 4) {
-                        createExplosion(e.x, e.y, e.color);
-                        enemies.splice(i, 1);
-                        projectiles.splice(j, 1);
-                        score += 100;
-                        scoreEl.innerText = "SCORE: " + score;
-                        break;
-                    }
-                }
-            }
+document.getElementById('exit-btn').addEventListener('click', closeHost);
+document.getElementById('go-exit-btn').addEventListener('click', closeHost);
 
-            // Update Particles
-            for (let i = particles.length - 1; i >= 0; i--) {
-                const p = particles[i];
-                p.update();
-                if (p.life <= 0) particles.splice(i, 1);
-            }
-        }
+// Initial Setup
+resize();
+draw();
 
-        function draw() {
-            // Trail effect
-            ctx.fillStyle = 'rgba(5, 5, 5, 0.2)';
-            ctx.fillRect(0, 0, width, height);
-
-            // Draw Particles
-            particles.forEach(p => p.draw());
-
-            if (gameActive) {
-                // Draw Player
-                ctx.save();
-                ctx.translate(player.x, player.y);
-                ctx.rotate(player.angle);
-
-                ctx.strokeStyle = player.color;
-                ctx.lineWidth = 2;
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = player.color;
-
-                ctx.beginPath();
-                ctx.moveTo(15, 0);
-                ctx.lineTo(-10, 10);
-                ctx.lineTo(-5, 0);
-                ctx.lineTo(-10, -10);
-                ctx.closePath();
-                ctx.stroke();
-
-                ctx.restore();
-                ctx.shadowBlur = 0;
-
-                // Draw Projectiles
-                projectiles.forEach(p => p.draw());
-
-                // Draw Enemies
-                enemies.forEach(e => e.draw());
-
-                if (isPaused) {
-                    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-                    ctx.fillRect(0, 0, width, height);
-                    ctx.fillStyle = "#fff";
-                    ctx.font = "bold 48px Segoe UI";
-                    ctx.textAlign = "center";
-                    ctx.textBaseline = "middle";
-                    ctx.shadowBlur = 10;
-                    ctx.shadowColor = "#f00";
-                    ctx.fillText("PAUSED", width / 2, height / 2);
-                    ctx.shadowBlur = 0;
-                }
-            }
-        }
-
-        function loop(timestamp) {
-            const dt = timestamp - lastTime;
-            lastTime = timestamp;
-
-            update(dt);
-            draw();
-
-            animationId = requestAnimationFrame(loop);
-        }
-
-        animationId = requestAnimationFrame(loop);
-
-    </script>
+</script>
 </body>
-
 </html>
