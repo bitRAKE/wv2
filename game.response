@@ -1,0 +1,37 @@
+-std=c17
+-Wall
+-Wextra
+-Werror
+-pedantic
+-Wno-extra-semi
+-target x86_64-pc-windows-msvc
+-DUNICODE
+-D_UNICODE
+-DWIN32_LEAN_AND_MEAN
+-D_WIN32_WINNT=0x0A00
+-DCINTERFACE
+-DCOBJMACROS
+-Dinterface=struct
+-I "C:\\Users\\bitRA\\.nuget\\packages\\microsoft.web.webview2\\1.0.864.35\\build\\native\\include"
+-march=native
+-O3
+-ffunction-sections
+-fdata-sections
+-fno-stack-protector
+-ffreestanding
+-fno-builtin
+-nostdlib
+-lmsvcrt
+-luser32
+-lshell32
+-ladvapi32
+-lversion
+-lole32
+-loleaut32
+"C:\\Users\\bitRA\\.nuget\\packages\\microsoft.web.webview2\\1.0.864.35\\build\\native\\x64\\WebView2LoaderStatic.lib"
+game.res
+-flto
+-fuse-ld=lld
+-Xlinker "-subsystem:windows,10.0"
+-o "game.exe"
+game.c
