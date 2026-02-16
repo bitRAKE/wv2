@@ -1,0 +1,6 @@
+minimal.exe.WebView2/
+advanced_userdata/
+.vs/
+*.obj
+*.pdb
+*.exe

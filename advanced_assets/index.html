@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebView2 Advanced (C)</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="kicker">WebView2 Advanced</div>
+      <h1>C host, Web UI, deep WebView2 surface</h1>
+      <p class="sub">
+        This page talks to the native host via <code>chrome.webview.postMessage</code> and
+        receives native events and results via <code>chrome.webview</code> message events.
+      </p>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Commands</h2>
+
+        <div class="row">
+          <button data-cmd="devtools">Open DevTools</button>
+          <button data-cmd="dtp-version">DevTools: Browser.getVersion</button>
+          <button data-cmd="version">WebView2 Runtime Version</button>
+          <button data-cmd="settings-dump">Dump Settings</button>
+        </div>
+
+        <div class="row">
+          <label class="field">
+            <span>Navigate</span>
+            <input id="navUrl" type="url" value="https://example.com" />
+          </label>
+          <button id="navGo">Go</button>
+          <button data-cmd="back">Back</button>
+          <button data-cmd="forward">Forward</button>
+          <button data-cmd="reload">Reload</button>
+        </div>
+
+        <div class="row">
+          <button id="openBlank">window.open (intercept)</button>
+          <button id="doAlert">alert()</button>
+          <button id="doPrompt">prompt()</button>
+          <button id="doFullscreen">Toggle Fullscreen</button>
+          <button id="doClose">window.close()</button>
+        </div>
+
+        <div class="row">
+          <button id="geo">Geolocation (permission)</button>
+          <button id="notify">Notifications (permission)</button>
+          <button id="clipboard">Clipboard Read (permission)</button>
+        </div>
+
+        <div class="row">
+          <button id="apiTime">fetch /api/time</button>
+          <label class="field">
+            <span>Echo</span>
+            <input id="echoText" type="text" value="hello from fetch()" />
+          </label>
+          <button id="apiEcho">fetch /api/echo</button>
+        </div>
+
+        <div class="row">
+          <label class="field wide">
+            <span>Native ExecuteScript</span>
+            <input id="jsExpr" type="text" value="document.title" />
+          </label>
+          <button id="execJs">Execute</button>
+        </div>
+      </section>
+
+      <section class="panes">
+        <section class="card pane">
+          <h2>Output</h2>
+          <pre id="output" class="mono"></pre>
+        </section>
+
+        <section class="card pane">
+          <h2>Event Log</h2>
+          <pre id="log" class="mono"></pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
+
