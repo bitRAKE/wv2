@@ -12,7 +12,6 @@
 -DCINTERFACE
 -DCOBJMACROS
 -Dinterface=struct
--I "C:\\Users\\bitRA\\.nuget\\packages\\microsoft.web.webview2\\1.0.864.35\\build\\native\\include"
 -march=native
 -O3
 -ffunction-sections
@@ -28,7 +27,7 @@
 -lversion
 -lole32
 -loleaut32
-"C:\\Users\\bitRA\\.nuget\\packages\\microsoft.web.webview2\\1.0.864.35\\build\\native\\x64\\WebView2LoaderStatic.lib"
+-lWebView2LoaderStatic
 -flto
 -fuse-ld=lld
 -Xlinker "-subsystem:windows,10.0"

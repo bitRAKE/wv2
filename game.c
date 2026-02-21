@@ -11,6 +11,7 @@
 
 #include "WebView2.h"
 
+
 // Forward declarations
 // Helper: Debug Log
 static void DebugLog(const char* fmt, ...) {
@@ -33,6 +34,26 @@ static HWND g_hwnd = NULL;
 static ICoreWebView2Controller* g_controller = NULL;
 static ICoreWebView2* g_webview = NULL;
 static EventRegistrationToken g_msg_token = {0};
+
+// Add global for cursor state
+static BOOL g_cursorLocked = FALSE;
+
+// Add helper function
+static void SetCursorLock(BOOL lock) {
+    if (lock && !g_cursorLocked) {
+        RECT clip;
+        GetClientRect(g_hwnd, &clip);
+        ClientToScreen(g_hwnd, (POINT*)&clip.left);
+        ClientToScreen(g_hwnd, (POINT*)&clip.right);
+        ClipCursor(&clip);
+        g_cursorLocked = TRUE;
+        ShowCursor(FALSE); // Hide system cursor
+    } else if (!lock && g_cursorLocked) {
+        ClipCursor(NULL);
+        g_cursorLocked = FALSE;
+        ShowCursor(TRUE); // Show system cursor
+    }
+}
 
 // Helper: Load HTML from Resource
 static wchar_t* LoadGameHtmlResource(void) {
@@ -142,7 +163,15 @@ static HRESULT STDMETHODCALLTYPE WebMessageHandler_Invoke(
     LPWSTR msg = NULL;
     if (SUCCEEDED(ICoreWebView2WebMessageReceivedEventArgs_TryGetWebMessageAsString(args, &msg)) && msg) {
         if (wcscmp(msg, L"close") == 0) {
+            SetCursorLock(FALSE); // Release cursor before closing
             PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
+        }
+        // ✅ NEW: Cursor lock/unlock messages
+        else if (wcscmp(msg, L"cursor_lock") == 0) {
+            SetCursorLock(TRUE);
+        }
+        else if (wcscmp(msg, L"cursor_unlock") == 0) {
+            SetCursorLock(FALSE);
         }
         CoTaskMemFree(msg);
     }
@@ -339,6 +368,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         ResizeWebView();
         return 0;
     case WM_DESTROY:
+        SetCursorLock(FALSE); // ✅ Release cursor on exit
         if (g_webview) {
             ICoreWebView2_remove_WebMessageReceived(g_webview, g_msg_token);
             ICoreWebView2_Release(g_webview);
@@ -352,6 +382,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     case WM_KEYDOWN:
         if (wParam == VK_ESCAPE) {
+            SetCursorLock(FALSE); // ✅ Release cursor before closing
             PostMessageW(hwnd, WM_CLOSE, 0, 0);
         }
         return 0;
