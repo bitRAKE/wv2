@@ -1,6 +1,6 @@
 # `webview_advanced` (C + WebView2)
 
-`webview_advanced` is a "wide surface area" companion to `webview_minimal`: it stays **plain C**, but exercises a larger portion of the **WebView2 COM interface** (events, settings, devtools protocol, web resource interception, virtual host mapping).
+`webview_advanced` is a "wide surface area" companion to `webview_minimal`: it stays **plain C**, but exercises a larger portion of the **WebView2 COM interface** (events, settings, devtools protocol, and a full `WebResourceRequested`-backed app origin).
 
 The intent is to serve as a reference for how to write correct COM vtable handlers from C and as a playground for exploring what the WebView2 API can do without switching to C++ or a helper library.
 
@@ -16,9 +16,13 @@ WebView2 gives a native Win32/C app a modern, standards-compliant UI surface whi
 ## What This Sample Demonstrates
 
 - **Local UI assets** without an embedded HTTP server:
-  - Maps `https://appassets.local/` to `webview_advanced_assets/` via `ICoreWebView2_3_SetVirtualHostNameToFolderMapping`.
+  - Serves `https://appassets.local/` directly from `advanced_assets/` inside `WebResourceRequested`.
+  - This avoids the unsupported `WebResourceRequested` + `SetVirtualHostNameToFolderMapping` combination for the same hostname.
 - **Request interception**:
-  - Uses `AddWebResourceRequestedFilter` + `WebResourceRequested` to implement:
+  - Uses `AddWebResourceRequestedFilter` + `WebResourceRequested` to implement the whole app origin:
+    - `GET https://appassets.local/index.html`
+    - `GET https://appassets.local/style.css`
+    - `GET https://appassets.local/app.js`
     - `GET https://appassets.local/api/time` (JSON)
     - `GET https://appassets.local/api/echo?text=...` (text)
 - **Events** (instrumented and logged):
@@ -75,4 +79,3 @@ If you want to keep pushing "how far can C go with WebView2", good next areas to
 - **Profile + storage**: profile, cookies, permissions persistence, and per-app user data layouts.
 - **Security posture**: strict navigation policies, origin allowlists, script injection hardening, and request filtering.
 - **Custom protocols**: app-owned scheme and/or a more complete "API layer" over `WebResourceRequested`.
-

@@ -4,6 +4,15 @@
 //
 // This sample is intentionally verbose: it shows how to work with the COM-style
 // WebView2 API from C without helper libraries.
+//
+// Suggested reading order for students:
+// 1. WinMain
+// 2. EnvCreated_Invoke
+// 3. ControllerCreated_Invoke
+// 4. SubscribeEvents
+// 5. WebMessage_Invoke
+// 6. WebResourceRequested_Invoke
+// 7. the individual event handlers you want to copy into your own app
 
 #include <windows.h>
 #include <objbase.h>
@@ -21,6 +30,8 @@ typedef struct TokenSlot {
     BOOL valid;
 } TokenSlot;
 
+// Global host state.
+// This sample keeps one top-level WebView and stores event tokens so teardown is explicit.
 static HWND g_hwnd = NULL;
 static ICoreWebView2Environment* g_env = NULL;
 static ICoreWebView2Controller* g_controller = NULL;
@@ -39,6 +50,17 @@ static TokenSlot g_tok_fullscreen = {{0}, FALSE};
 static TokenSlot g_tok_window_close = {{0}, FALSE};
 static TokenSlot g_tok_webmsg = {{0}, FALSE};
 static TokenSlot g_tok_webresource = {{0}, FALSE};
+
+// The sample serves its whole synthetic origin through WebResourceRequested.
+// That makes the app self-contained and demonstrates request interception without a server.
+static const wchar_t kAppOrigin[] = L"https://appassets.local";
+static const wchar_t kAppOriginFilter[] = L"https://appassets.local/*";
+static const wchar_t kAppStartUrl[] = L"https://appassets.local/index.html";
+static const wchar_t kAssetsSubdir[] = L"\\advanced_assets";
+
+// -----------------------------------------------------------------------------
+// Logging and small host utilities
+// -----------------------------------------------------------------------------
 
 static void PostToPage(const wchar_t* msg) {
     if (!g_webview || !g_page_ready || !msg) {
@@ -121,6 +143,98 @@ static BOOL PathAppendInPlace(wchar_t* path, size_t cap, const wchar_t* suffix) 
     return TRUE;
 }
 
+// -----------------------------------------------------------------------------
+// Mini "app server" helpers for WebResourceRequested
+// -----------------------------------------------------------------------------
+
+static BOOL BuildAssetPath(const wchar_t* leafName, wchar_t* outPath, size_t cap) {
+    if (!leafName || !outPath || cap == 0) {
+        return FALSE;
+    }
+    // Keep the sample simple and safe: only serve known leaf files from advanced_assets.
+    if (wcschr(leafName, L'\\') || wcschr(leafName, L'/') || wcschr(leafName, L':') ||
+        wcsstr(leafName, L"..")) {
+        return FALSE;
+    }
+    if (!GetExeDir(outPath, cap)) {
+        return FALSE;
+    }
+    if (!PathAppendInPlace(outPath, cap, kAssetsSubdir)) {
+        return FALSE;
+    }
+    if (!PathAppendInPlace(outPath, cap, L"\\")) {
+        return FALSE;
+    }
+    if (!PathAppendInPlace(outPath, cap, leafName)) {
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static HRESULT LoadFileBytesAlloc(const wchar_t* path, BYTE** outBytes, size_t* outLen) {
+    if (!path || !outBytes || !outLen) {
+        return E_POINTER;
+    }
+    *outBytes = NULL;
+    *outLen = 0;
+
+    HANDLE file = CreateFileW(
+        path,
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        NULL,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
+    );
+    if (file == INVALID_HANDLE_VALUE) {
+        return HRESULT_FROM_WIN32(GetLastError());
+    }
+
+    LARGE_INTEGER size;
+    if (!GetFileSizeEx(file, &size)) {
+        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+        CloseHandle(file);
+        return hr;
+    }
+    if (size.QuadPart < 0 || (ULONGLONG)size.QuadPart > (ULONGLONG)SIZE_MAX) {
+        CloseHandle(file);
+        return HRESULT_FROM_WIN32(ERROR_FILE_TOO_LARGE);
+    }
+
+    size_t len = (size_t)size.QuadPart;
+    SIZE_T allocLen = len == 0 ? 1 : len;
+    BYTE* bytes = (BYTE*)HeapAlloc(GetProcessHeap(), 0, allocLen);
+    if (!bytes) {
+        CloseHandle(file);
+        return E_OUTOFMEMORY;
+    }
+
+    size_t total = 0;
+    while (total < len) {
+        size_t remaining = len - total;
+        DWORD chunk = remaining > MAXDWORD ? MAXDWORD : (DWORD)remaining;
+        DWORD got = 0;
+        if (!ReadFile(file, bytes + total, chunk, &got, NULL)) {
+            HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+            HeapFree(GetProcessHeap(), 0, bytes);
+            CloseHandle(file);
+            return hr;
+        }
+        if (got == 0) {
+            HeapFree(GetProcessHeap(), 0, bytes);
+            CloseHandle(file);
+            return HRESULT_FROM_WIN32(ERROR_HANDLE_EOF);
+        }
+        total += got;
+    }
+
+    CloseHandle(file);
+    *outBytes = bytes;
+    *outLen = len;
+    return S_OK;
+}
+
 static HRESULT StreamFromBytes(const void* data, size_t len, IStream** outStream) {
     if (!outStream) return E_POINTER;
     *outStream = NULL;
@@ -178,7 +292,7 @@ static HRESULT Utf8FromWideAlloc(const wchar_t* ws, char** outBytes, size_t* out
     return S_OK;
 }
 
-static HRESULT MakeTextResponseUtf8(
+static HRESULT MakeBytesResponse(
     int status,
     const wchar_t* reason,
     const wchar_t* contentType,
@@ -203,7 +317,7 @@ static HRESULT MakeTextResponseUtf8(
 
     wchar_t headers[512];
     if (!contentType) {
-        contentType = L"text/plain; charset=utf-8";
+        contentType = L"application/octet-stream";
     }
     (void)swprintf_s(
         headers,
@@ -230,6 +344,20 @@ static HRESULT MakeTextResponseUtf8(
     return S_OK;
 }
 
+static HRESULT MakeTextResponseUtf8(
+    int status,
+    const wchar_t* reason,
+    const wchar_t* contentType,
+    const char* bytes,
+    size_t len,
+    ICoreWebView2WebResourceResponse** outResp
+) {
+    if (!contentType) {
+        contentType = L"text/plain; charset=utf-8";
+    }
+    return MakeBytesResponse(status, reason, contentType, bytes, len, outResp);
+}
+
 static HRESULT MakeTextResponseWide(
     int status,
     const wchar_t* reason,
@@ -253,8 +381,9 @@ static HRESULT MakeTextResponseWide(
     return hr;
 }
 
-// Handler implementation section (COM event handlers + completion handlers).
-// Filled in below.
+// -----------------------------------------------------------------------------
+// COM callback pattern used throughout the sample
+// -----------------------------------------------------------------------------
 
 // NOTE: WebView2 is COM. From C, that means:
 // - define a struct with the interface as the first field and a refcount
@@ -292,6 +421,7 @@ typedef struct ExecScriptCompletedHandler {
     volatile LONG ref;
 } ExecScriptCompletedHandler;
 
+// Completion handlers are the "one-shot" async callbacks for host-initiated operations.
 static HRESULT STDMETHODCALLTYPE ExecScriptCompleted_Invoke(
     ICoreWebView2ExecuteScriptCompletedHandler* This, HRESULT errorCode, LPCWSTR resultObjectAsJson
 ) {
@@ -415,6 +545,10 @@ static AddScriptCompletedHandler* AddScriptCompletedHandler_Create(void) {
     self->ref = 1;
     return self;
 }
+
+// -----------------------------------------------------------------------------
+// Host-side helpers that trigger WebView2 features from native code
+// -----------------------------------------------------------------------------
 
 static void DumpSettings(void) {
     if (!g_webview) {
@@ -576,6 +710,10 @@ static const wchar_t* ProcessFailedKindStr(COREWEBVIEW2_PROCESS_FAILED_KIND k) {
     }
 }
 
+// -----------------------------------------------------------------------------
+// Event handlers
+// -----------------------------------------------------------------------------
+
 typedef struct WebMessageHandler {
     ICoreWebView2WebMessageReceivedEventHandler iface;
     volatile LONG ref;
@@ -599,6 +737,8 @@ static HRESULT STDMETHODCALLTYPE WebMessage_Invoke(
         return S_OK;
     }
 
+    // The page sends this once its JS event listeners are installed.
+    // Until then, native logs only go to the debugger to avoid losing messages.
     if (_wcsicmp(msg, L"cmd ready") == 0) {
         g_page_ready = TRUE;
         LogLine(L"[native] page ready");
@@ -946,6 +1086,8 @@ static HRESULT STDMETHODCALLTYPE PermissionRequested_Invoke(
     }
 
     COREWEBVIEW2_PERMISSION_STATE newState = COREWEBVIEW2_PERMISSION_STATE_DEFAULT;
+    // This is intentionally opinionated demo policy rather than production policy.
+    // It shows where a host app can centralize allow/deny decisions.
     if (!user) {
         newState = COREWEBVIEW2_PERMISSION_STATE_DENY;
     } else {
@@ -1105,6 +1247,7 @@ static HRESULT STDMETHODCALLTYPE NewWindowRequested_Invoke(
     if (args) {
         (void)ICoreWebView2NewWindowRequestedEventArgs_put_Handled(args, TRUE);
     }
+    // Re-route popups into the current view so the behavior is visible in a single window.
     if (g_webview && uri) {
         (void)ICoreWebView2_Navigate(g_webview, uri);
     }
@@ -1161,6 +1304,7 @@ static HRESULT STDMETHODCALLTYPE ProcessFailed_Invoke(
     LogFmt(L"[event] ProcessFailed kind=%s", ProcessFailedKindStr(kind));
 
     if (args) {
+        // Newer SDKs expose richer failure info behind a later interface revision.
         ICoreWebView2ProcessFailedEventArgs2* a2 = NULL;
         HRESULT hr = ICoreWebView2ProcessFailedEventArgs_QueryInterface(
             args, &IID_ICoreWebView2ProcessFailedEventArgs2, (void**)&a2
@@ -1384,11 +1528,86 @@ static HRESULT UrlDecodeUtf8ToWideAlloc(const wchar_t* enc, size_t encLen, wchar
     return S_OK;
 }
 
+// Strip query/fragment and normalize "https://appassets.local[/...]" into a route string.
+static BOOL GetAppRouteFromUri(const wchar_t* uri, wchar_t* outRoute, size_t cap) {
+    if (!uri || !outRoute || cap == 0) {
+        return FALSE;
+    }
+
+    size_t baseLen = wcslen(kAppOrigin);
+    if (_wcsnicmp(uri, kAppOrigin, baseLen) != 0) {
+        return FALSE;
+    }
+
+    const wchar_t* route = uri + baseLen;
+    if (route[0] == L'\0') {
+        route = L"/";
+    } else if (route[0] != L'/') {
+        return FALSE;
+    }
+
+    const wchar_t* end = route;
+    while (*end && *end != L'?' && *end != L'#') {
+        ++end;
+    }
+
+    size_t routeLen = (size_t)(end - route);
+    if (routeLen + 1 > cap) {
+        return FALSE;
+    }
+
+    wmemcpy(outRoute, route, routeLen);
+    outRoute[routeLen] = L'\0';
+    return TRUE;
+}
+
+static HRESULT MakeAssetResponseForRoute(
+    const wchar_t* route, ICoreWebView2WebResourceResponse** outResp
+) {
+    if (!route || !outResp) {
+        return E_POINTER;
+    }
+
+    // Keep the dispatch table explicit so students can see exactly what is being served.
+    const wchar_t* leafName = NULL;
+    const wchar_t* contentType = NULL;
+    if (_wcsicmp(route, L"/") == 0 || _wcsicmp(route, L"/index.html") == 0) {
+        leafName = L"index.html";
+        contentType = L"text/html; charset=utf-8";
+    } else if (_wcsicmp(route, L"/app.js") == 0) {
+        leafName = L"app.js";
+        contentType = L"text/javascript; charset=utf-8";
+    } else if (_wcsicmp(route, L"/style.css") == 0) {
+        leafName = L"style.css";
+        contentType = L"text/css; charset=utf-8";
+    } else {
+        return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+    }
+
+    wchar_t path[MAX_PATH];
+    if (!BuildAssetPath(leafName, path, _countof(path))) {
+        return E_FAIL;
+    }
+
+    BYTE* bytes = NULL;
+    size_t len = 0;
+    HRESULT hr = LoadFileBytesAlloc(path, &bytes, &len);
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    hr = MakeBytesResponse(200, L"OK", contentType, (const char*)bytes, len, outResp);
+    HeapFree(GetProcessHeap(), 0, bytes);
+    return hr;
+}
+
 typedef struct WebResourceRequestedHandler {
     ICoreWebView2WebResourceRequestedEventHandler iface;
     volatile LONG ref;
 } WebResourceRequestedHandler;
 
+// This handler acts like a tiny HTTP router implemented in C.
+// In a real app you might swap this out for stricter routing or a generated API layer.
 static HRESULT STDMETHODCALLTYPE WebResourceRequested_Invoke(
     ICoreWebView2WebResourceRequestedEventHandler* This,
     ICoreWebView2* sender,
@@ -1416,8 +1635,14 @@ static HRESULT STDMETHODCALLTYPE WebResourceRequested_Invoke(
         LogFmt(L"[event] WebResourceRequested %s %s", method ? method : L"(null)", uri);
     }
 
+    wchar_t route[128];
+    BOOL haveRoute = GetAppRouteFromUri(uri, route, _countof(route));
+
     ICoreWebView2WebResourceResponse* resp = NULL;
-    if (uri && StartsWithI(uri, L"https://appassets.local/api/time")) {
+    // Simple route table:
+    // - /api/* returns generated responses
+    // - everything else is served from advanced_assets
+    if (haveRoute && _wcsicmp(route, L"/api/time") == 0) {
         SYSTEMTIME st;
         GetLocalTime(&st);
         wchar_t json[512];
@@ -1435,7 +1660,7 @@ static HRESULT STDMETHODCALLTYPE WebResourceRequested_Invoke(
             (unsigned)st.wMilliseconds
         );
         hr = MakeTextResponseWide(200, L"OK", L"application/json; charset=utf-8", json, &resp);
-    } else if (uri && StartsWithI(uri, L"https://appassets.local/api/echo")) {
+    } else if (haveRoute && _wcsicmp(route, L"/api/echo") == 0) {
         const wchar_t* q = wcschr(uri, L'?');
         const wchar_t* textParam = NULL;
         if (q) {
@@ -1460,8 +1685,21 @@ static HRESULT STDMETHODCALLTYPE WebResourceRequested_Invoke(
             hr = MakeTextResponseWide(200, L"OK", L"text/plain; charset=utf-8", text, &resp);
             HeapFree(GetProcessHeap(), 0, decoded);
         }
+    } else if (haveRoute) {
+        hr = MakeAssetResponseForRoute(route, &resp);
+        if (FAILED(hr)) {
+            wchar_t msg[256];
+            (void)swprintf_s(msg, _countof(msg), L"not found: %s\n", route);
+            hr = MakeTextResponseWide(404, L"Not Found", L"text/plain; charset=utf-8", msg, &resp);
+        }
     } else {
-        hr = MakeTextResponseWide(404, L"Not Found", L"text/plain; charset=utf-8", L"not found\n", &resp);
+        hr = MakeTextResponseWide(
+            404,
+            L"Not Found",
+            L"text/plain; charset=utf-8",
+            L"not found: unsupported uri\n",
+            &resp
+        );
     }
 
     if (SUCCEEDED(hr) && resp) {
@@ -1503,7 +1741,9 @@ static WebResourceRequestedHandler* WebResourceRequestedHandler_Create(void) {
     return self;
 }
 
-// Window procedure and WinMain below.
+// -----------------------------------------------------------------------------
+// Event subscription lifetime
+// -----------------------------------------------------------------------------
 
 static void TokenSlot_Clear(TokenSlot* s) {
     if (!s) {
@@ -1518,6 +1758,7 @@ static void SubscribeEvents(void) {
         return;
     }
 
+    // Register every event before the first navigation so startup activity is observable.
     NavigationStartingHandler* navStart = NavigationStartingHandler_Create();
     if (navStart) {
         HRESULT hr = ICoreWebView2_add_NavigationStarting(
@@ -1686,8 +1927,9 @@ static void SubscribeEvents(void) {
         }
     }
 
+    // The whole sample origin is WRR-backed, so this filter must be active before navigation.
     HRESULT hrFilter = ICoreWebView2_AddWebResourceRequestedFilter(
-        g_webview, L"https://appassets.local/api/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL
+        g_webview, kAppOriginFilter, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL
     );
     if (FAILED(hrFilter)) {
         LogFmt(L"[native] AddWebResourceRequestedFilter failed: 0x%08lx", (unsigned long)hrFilter);
@@ -1766,6 +2008,10 @@ static void UnsubscribeEvents(void) {
     g_page_ready = FALSE;
 }
 
+// -----------------------------------------------------------------------------
+// Async startup pipeline: environment -> controller -> settings -> navigation
+// -----------------------------------------------------------------------------
+
 typedef struct ControllerCreatedHandler {
     ICoreWebView2CreateCoreWebView2ControllerCompletedHandler iface;
     volatile LONG ref;
@@ -1815,8 +2061,10 @@ static HRESULT STDMETHODCALLTYPE ControllerCreated_Invoke(
         ICoreWebView2Settings_Release(s);
     }
 
+    // Subscribe before navigating so the sample shows the full lifecycle from the first request.
     SubscribeEvents();
 
+    // Inject a tiny script into every document so the sample can prove document-created injection works.
     const wchar_t* inject =
         L"(() => { try { chrome.webview.postMessage('cmd injected'); } catch (e) {} })();";
     AddScriptCompletedHandler* injDone = AddScriptCompletedHandler_Create();
@@ -1834,36 +2082,8 @@ static HRESULT STDMETHODCALLTYPE ControllerCreated_Invoke(
         }
     }
 
-    wchar_t assetsDir[MAX_PATH];
-    if (!GetExeDir(assetsDir, _countof(assetsDir))) {
-        LogLine(L"[native] GetExeDir failed; cannot map assets");
-    } else {
-        if (!PathAppendInPlace(assetsDir, _countof(assetsDir), L"\\advanced_assets")) {
-            LogLine(L"[native] assets path too long; cannot map assets");
-        } else {
-            ICoreWebView2_3* wv3 = NULL;
-            HRESULT hr3 = ICoreWebView2_QueryInterface(g_webview, &IID_ICoreWebView2_3, (void**)&wv3);
-            if (SUCCEEDED(hr3) && wv3) {
-                HRESULT hr4 = ICoreWebView2_3_SetVirtualHostNameToFolderMapping(
-                    wv3,
-                    L"appassets.local",
-                    assetsDir,
-                    COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW
-                );
-                if (FAILED(hr4)) {
-                    LogFmt(
-                        L"[native] SetVirtualHostNameToFolderMapping failed: 0x%08lx",
-                        (unsigned long)hr4
-                    );
-                }
-                ICoreWebView2_3_Release(wv3);
-
-                (void)ICoreWebView2_Navigate(g_webview, L"https://appassets.local/index.html");
-            } else {
-                LogLine(L"[native] ICoreWebView2_3 not available; cannot map assets");
-            }
-        }
-    }
+    LogLine(L"[native] serving appassets.local entirely via WebResourceRequested");
+    (void)ICoreWebView2_Navigate(g_webview, kAppStartUrl);
 
     ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Release(This);
     return S_OK;
@@ -1963,12 +2183,17 @@ static EnvCreatedHandler* EnvCreatedHandler_Create(void) {
     return self;
 }
 
+// -----------------------------------------------------------------------------
+// Win32 shell
+// -----------------------------------------------------------------------------
+
 static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_SIZE:
         ResizeWebView();
         return 0;
     case WM_DESTROY:
+        // Tear down in the reverse order of setup so event tokens and COM objects stay tidy.
         UnsubscribeEvents();
         if (g_webview) {
             ICoreWebView2_Release(g_webview);
@@ -2045,6 +2270,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         CoUninitialize();
         return EXIT_FAILURE;
     }
+    // A dedicated user-data folder makes the sample's cookies/cache/profile easy to inspect.
     (void)CreateDirectoryW(userDataDir, NULL);
 
     EnvCreatedHandler* envHandler = EnvCreatedHandler_Create();
